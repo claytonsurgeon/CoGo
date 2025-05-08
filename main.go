@@ -21,7 +21,128 @@ func main() {
 	// run_matchRecorder()
 	// time.Sleep(101 * time.Second)
 	// run_doWork()
-	run_multiplayer()
+	// run_multiplayer()
+	// run_read_preffered_locking()
+	run_write_preffered_locking()
+	fmt.Println("\n\nTerminating...")
+	os.Exit(0)
+}
+
+func run_write_preffered_locking() {
+	rwMutex := NewReadWriteMutex()
+	for range 2 {
+		go func() {
+			for {
+				rwMutex.ReadLock()
+				time.Sleep(1 * time.Second)
+				fmt.Println("Read done")
+				rwMutex.ReadUnlock()
+			}
+		}()
+	}
+
+	time.Sleep(5 * time.Second)
+	rwMutex.WriteLock()
+	fmt.Println("Write finished")
+}
+
+func run_read_preffered_locking() {
+	rwMutex := ReadWriteMutex_reader_preferred{}
+	for range 2 {
+		go func() {
+			for {
+				rwMutex.ReadLock()
+				time.Sleep(1 * time.Second)
+				fmt.Println("Read done")
+				rwMutex.ReadUnlock()
+			}
+		}()
+	}
+
+	time.Sleep(1 * time.Second)
+	rwMutex.WriteLock()
+	fmt.Println("Write finished")
+}
+
+// write preferring mutex using conditions
+type ReadWriteMutex struct {
+	readersCounter int
+	writersWaiting int
+	writerActive   bool
+	cond           *sync.Cond
+}
+
+func NewReadWriteMutex() *ReadWriteMutex {
+	return &ReadWriteMutex{cond: sync.NewCond(&sync.Mutex{})}
+}
+
+func (rw *ReadWriteMutex) ReadLock() {
+	rw.cond.L.Lock()
+	for rw.writersWaiting > 0 || rw.writerActive {
+		rw.cond.Wait()
+	}
+	rw.readersCounter++
+	rw.cond.L.Unlock()
+}
+
+func (rw *ReadWriteMutex) WriteLock() {
+	rw.cond.L.Lock()
+
+	rw.writersWaiting++
+	for rw.readersCounter > 0 || rw.writerActive {
+		rw.cond.Wait()
+	}
+	rw.writersWaiting--
+	rw.writerActive = true
+
+	rw.cond.L.Unlock()
+}
+
+func (rw *ReadWriteMutex) ReadUnlock() {
+	rw.cond.L.Lock()
+	rw.readersCounter--
+	if rw.readersCounter == 0 {
+		rw.cond.Broadcast()
+	}
+	rw.cond.L.Unlock()
+}
+
+func (rw *ReadWriteMutex) WriteUnlock() {
+	rw.cond.L.Lock()
+	rw.writerActive = false
+	rw.cond.Broadcast()
+	rw.cond.L.Unlock()
+}
+
+type ReadWriteMutex_reader_preferred struct {
+	readersCounter int
+	readersLock    sync.Mutex
+	globalLock     sync.Mutex
+}
+
+func (rw *ReadWriteMutex_reader_preferred) ReadLock() {
+	rw.readersLock.Lock()
+	rw.readersCounter++
+	if rw.readersCounter == 1 {
+		rw.globalLock.Lock()
+	}
+	rw.readersLock.Unlock()
+}
+
+func (rw *ReadWriteMutex_reader_preferred) WriteLock() {
+	rw.globalLock.Lock()
+}
+func (rw *ReadWriteMutex_reader_preferred) ReadUnlock() {
+	rw.readersLock.Lock()
+	rw.readersCounter--
+	if rw.readersCounter == 0 {
+		rw.globalLock.Unlock()
+	}
+	rw.readersLock.Unlock()
+}
+
+func (rw *ReadWriteMutex_reader_preferred) WriteUnlock() {
+	rw.globalLock.Unlock()
 }
 
 func run_multiplayer() {
