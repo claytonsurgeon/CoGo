@@ -23,9 +23,56 @@ func main() {
 	// run_doWork()
 	// run_multiplayer()
 	// run_read_preffered_locking()
-	run_write_preffered_locking()
+	// run_write_preffered_locking()
+	run_semaphore()
 	fmt.Println("\n\nTerminating...")
 	os.Exit(0)
+}
+
+func run_semaphore() {
+	semaphore := NewSemaphore(0)
+	for range 50000 {
+		go doWork_semaphore(semaphore)
+		fmt.Println("Waiting for child goroutine")
+		semaphore.Acquire()
+		fmt.Printf("Child goroutine finished\n\n")
+	}
+}
+
+func doWork_semaphore(semaphore *Semaphore) {
+	fmt.Println("Work started")
+	fmt.Println("Work finished")
+	semaphore.Release()
+}
+
+type Semaphore struct {
+	permits int
+	cond    *sync.Cond
+}
+
+func NewSemaphore(n int) *Semaphore {
+	return &Semaphore{
+		permits: n,
+		cond:    sync.NewCond(&sync.Mutex{}),
+	}
+}
+
+func (rw *Semaphore) Acquire() {
+	rw.cond.L.Lock()
+	for rw.permits <= 0 {
+		rw.cond.Wait()
+	}
+	rw.permits--
+	rw.cond.L.Unlock()
+}
+
+func (rw *Semaphore) Release() {
+	rw.cond.L.Lock()
+
+	rw.permits++
+	rw.cond.Signal()
+
+	rw.cond.L.Unlock()
 }
 
 func run_write_preffered_locking() {
