@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"net/http"
 	"os"
 	"strconv"
@@ -24,9 +25,54 @@ func main() {
 	// run_multiplayer()
 	// run_read_preffered_locking()
 	// run_write_preffered_locking()
-	run_semaphore()
+	// run_semaphore()
+	// run_waitGroup()
+	run_countLetters_waitGroup()
 	fmt.Println("\n\nTerminating...")
 	os.Exit(0)
+}
+
+func run_countLetters_waitGroup() {
+	wg := sync.WaitGroup{}
+	count := 31
+	wg.Add(count)
+	mutex := sync.Mutex{}
+	freq := make([]int, 26)
+
+	for i := 1000; i < 1000+31; i++ {
+		url := fmt.Sprintf("https://rfc-editor.org/rfc/rfc%d.txt", i)
+
+		go func() {
+			countLetters(url, freq, &mutex)
+			wg.Done()
+		}()
+	}
+
+	wg.Wait()
+
+	mutex.Lock()
+	for i, c := range all_letters {
+		fmt.Printf("%c: %d\n", c, freq[i])
+	}
+	mutex.Unlock()
+}
+
+func run_waitGroup() {
+	wg := sync.WaitGroup{}
+	wg.Add(10)
+	for i := range 10 {
+		go doWork_waitGroup(i, &wg)
+	}
+	wg.Wait()
+	fmt.Println("All complete")
+}
+
+func doWork_waitGroup(id int, wg *sync.WaitGroup) {
+	i := rand.IntN(10000)
+	time.Sleep(time.Duration(i) * time.Millisecond)
+
+	fmt.Println(id, "Done working after", float64(i)/1000, "seconds")
+	wg.Done()
 }
 
 func run_semaphore() {
