@@ -33,9 +33,110 @@ func main() {
 	// run_WaitGroupie()
 	// run_fileSearch_WaitGroupie2()
 	// run_workAndWait()
-	run_rowMul()
+	// run_rowMul()
+	// run_channels()
+	// run_slowReceiver()
+	// run_receiver_after_close()
+	run_receiver_with_done()
 	fmt.Println("\n\nTerminating...")
 	os.Exit(0)
+}
+
+func run_receiver_with_done() {
+	msgChannel := make(chan int)
+	// wg := &sync.WaitGroup{}
+	go receiver_with_done(msgChannel)
+	for i := range 3 {
+		fmt.Println(time.Now().Format("15:04:05"), "Sending:", i)
+		msgChannel <- i
+		time.Sleep(1 * time.Second)
+	}
+	// wg.Wait()
+	// time.Sleep(3 * time.Second)
+	close(msgChannel)
+	println("done")
+}
+
+func receiver_with_done(messages <-chan int) {
+	for msg := range messages {
+		fmt.Println(time.Now().Format("15:04:05"), "Received:", msg)
+		time.Sleep(1 * time.Second)
+	}
+	// for {
+	// 	msg, active := <-messages
+	// 	if !active {
+	// 		wg.Done()
+	// 		return
+	// 	}
+
+	// 	fmt.Println(time.Now().Format("15:04:05"), "Received:", msg)
+	// 	time.Sleep(1 * time.Second)
+
+	// }
+}
+
+func run_receiver_after_close() {
+	msgChannel := make(chan int)
+	go receiver_after_close(msgChannel)
+	for i := 1; i <= 3; i++ {
+		fmt.Println(time.Now().Format("15:04:05"), "Sending:", i)
+		msgChannel <- i
+		time.Sleep(1 * time.Second)
+	}
+	close(msgChannel)
+	time.Sleep(3 * time.Second)
+}
+
+func receiver_after_close(messages <-chan int) {
+	for {
+		msg := <-messages
+		fmt.Println(time.Now().Format("15:04:05"), "Received:", msg)
+		time.Sleep(1 * time.Second)
+	}
+}
+
+func run_slowReceiver() {
+	msgChan := make(chan int, 6)
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	go slowReceiver(msgChan, wg)
+	for i := range 20 {
+		time.Sleep(333 * time.Millisecond)
+		size := len(msgChan)
+		fmt.Printf("%s Sending: %d. Buffer Size: %d\n", time.Now().Format("15:04:05"), i, size)
+		msgChan <- i
+	}
+	msgChan <- -1
+	wg.Wait()
+}
+
+func slowReceiver(msgChan chan int, wg *sync.WaitGroup) {
+	msg := 0
+	for msg != -1 {
+		time.Sleep(600 * time.Millisecond)
+		msg = <-msgChan
+		fmt.Println("Received:", msg)
+	}
+	wg.Done()
+}
+
+func run_channels() {
+	msgChan := make(chan string)
+	go receiver(msgChan)
+	fmt.Println("Sending HELLO...")
+	msgChan <- "HELLO"
+	fmt.Println("Sending THERE...")
+	msgChan <- "THERE"
+	fmt.Println("Sending STOP...")
+	msgChan <- "STOP"
+}
+
+func receiver(msgChan chan string) {
+	msg := ""
+	for msg != "STOP" {
+		msg = <-msgChan
+		fmt.Println("Recieved:", msg)
+	}
 }
 
 const matrixSize = 3
