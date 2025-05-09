@@ -3,9 +3,11 @@ package main
 import (
 	"fmt"
 	"io"
+	"log"
 	"math/rand/v2"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -16,7 +18,7 @@ const all_letters = "abcdefghijklmnopqrstuvwxyz"
 
 func main() {
 	fmt.Println("\n\nStarting...")
-	time.Sleep(2 * time.Second)
+	time.Sleep(1 * time.Second)
 	// run_count_letters()
 	// run_stingy_and_spendy()
 	// run_matchRecorder()
@@ -27,9 +29,241 @@ func main() {
 	// run_write_preffered_locking()
 	// run_semaphore()
 	// run_waitGroup()
-	run_countLetters_waitGroup()
+	// run_countLetters_waitGroup()
+	// run_WaitGroupie()
+	// run_fileSearch_WaitGroupie2()
+	// run_workAndWait()
+	run_rowMul()
 	fmt.Println("\n\nTerminating...")
 	os.Exit(0)
+}
+
+const matrixSize = 3
+
+func run_rowMul() {
+	var matA, matB, result [matrixSize][matrixSize]int
+	barrier := NewBarrier(matrixSize + 1)
+	for row := range matrixSize {
+		go rowMul(&matA, &matB, &result, row, barrier)
+	}
+
+	for range 4 {
+		genRandMatrix(&matA)
+		genRandMatrix(&matB)
+
+		barrier.Wait()
+		barrier.Wait()
+
+		for i := range matrixSize {
+			fmt.Println(matA[i], matB[i], result[i])
+		}
+		fmt.Println()
+	}
+}
+
+func rowMul(matA, matB, result *[matrixSize][matrixSize]int, row int, barrier *Barrier) {
+	for {
+		barrier.Wait()
+		for col := range matrixSize {
+			sum := 0
+			for i := range matrixSize {
+				sum += matA[row][i] * matB[i][col]
+			}
+			result[row][col] = sum
+		}
+		barrier.Wait()
+	}
+}
+
+func matMul(matA, matb, result *[matrixSize][matrixSize]int) {
+	for row := range matrixSize {
+		for col := range matrixSize {
+			sum := 0
+			for i := range matrixSize {
+				sum += matA[row][i] * matb[i][col]
+			}
+			result[row][col] = sum
+		}
+	}
+}
+
+func genRandMatrix(mat *[matrixSize][matrixSize]int) {
+	for row := range matrixSize {
+		for col := range matrixSize {
+			mat[row][col] = rand.IntN(11) - 5
+		}
+	}
+}
+
+func run_workAndWait() {
+	barrier := NewBarrier(6)
+
+	go workAndWait("Red", 4, barrier)
+	go workAndWait("Orange", 6, barrier)
+	go workAndWait("Yellow", 2, barrier)
+	go workAndWait("Green", 7, barrier)
+	go workAndWait("Blue", 10, barrier)
+	go workAndWait("Violet", 5, barrier)
+
+	time.Sleep(100 * time.Second)
+}
+
+func workAndWait(name string, timeToWork int, barrier *Barrier) {
+	start := time.Now()
+	for {
+		fmt.Println(time.Since(start), name, "is running")
+		time.Sleep(time.Duration(timeToWork) * time.Second)
+		fmt.Println(time.Since(start), name, "is waiting on barrier")
+		barrier.Wait()
+	}
+}
+
+type Barrier struct {
+	size      int
+	waitCount int
+	cond      *sync.Cond
+}
+
+func NewBarrier(size int) *Barrier {
+	return &Barrier{size, 0, sync.NewCond(&sync.Mutex{})}
+}
+
+func (b *Barrier) Wait() {
+	b.cond.L.Lock()
+	b.waitCount += 1
+
+	if b.waitCount == b.size {
+		b.waitCount = 0
+		b.cond.Broadcast()
+	} else {
+		b.cond.Wait()
+	}
+	b.cond.L.Unlock()
+}
+
+func run_fileSearch_WaitGroupie2() {
+	wg := NewWaitGroupie2()
+	wg.Add(1)
+	exePath, err := os.Executable()
+	if err != nil {
+		log.Fatalf("Failed to get executable path: %v", err)
+	}
+	projDir := filepath.Dir(filepath.Dir(exePath))
+	fmt.Printf("Project's directory: %s\n", projDir)
+	go fileSearch_WaitGroupie2(projDir, "main", wg)
+	wg.Wait()
+}
+
+func fileSearch_WaitGroupie2(dir, filename string, wg *WaitGroupie2) {
+	files, _ := os.ReadDir(dir)
+	for _, file := range files {
+
+		fpath := filepath.Join(dir, file.Name())
+
+		if strings.Contains(file.Name(), filename) {
+			fmt.Println(fpath)
+		}
+		if file.IsDir() {
+			wg.Add(1)
+			go fileSearch_WaitGroupie2(fpath, filename, wg)
+		}
+	}
+	wg.Done()
+}
+
+type WaitGroupie2 struct {
+	groupSize int
+	cond      *sync.Cond
+}
+
+func NewWaitGroupie2() *WaitGroupie2 {
+	return &WaitGroupie2{
+		cond: sync.NewCond(&sync.Mutex{}),
+	}
+}
+
+func (wg *WaitGroupie2) Add(delta int) {
+	wg.cond.L.Lock()
+	wg.groupSize += delta
+	wg.cond.L.Unlock()
+}
+
+func (wg *WaitGroupie2) Wait() {
+	wg.cond.L.Lock()
+	for wg.groupSize > 0 {
+		wg.cond.Wait()
+	}
+	wg.cond.L.Unlock()
+}
+
+func (wg *WaitGroupie2) Done() {
+	wg.cond.L.Lock()
+	wg.groupSize--
+	if wg.groupSize == 0 {
+		wg.cond.Broadcast()
+	}
+	wg.cond.L.Unlock()
+}
+
+func run_fileSearch() {
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	exePath, err := os.Executable()
+	if err != nil {
+		log.Fatalf("Failed to get executable path: %v", err)
+	}
+	projDir := filepath.Dir(filepath.Dir(exePath))
+	fmt.Printf("Project's directory: %s\n", projDir)
+	go fileSearch(projDir, "main", &wg)
+	wg.Wait()
+}
+
+func fileSearch(dir, filename string, wg *sync.WaitGroup) {
+	files, _ := os.ReadDir(dir)
+	for _, file := range files {
+
+		fpath := filepath.Join(dir, file.Name())
+
+		if strings.Contains(file.Name(), filename) {
+			fmt.Println(fpath)
+		}
+		if file.IsDir() {
+			wg.Add(1)
+			go fileSearch(fpath, filename, wg)
+		}
+	}
+	wg.Done()
+}
+
+func run_WaitGroupie() {
+	count := 40
+	wg := NewWaitGroupie(count)
+	for i := range count {
+		go doWork_WaitGroupie(i, wg)
+	}
+	wg.Wait()
+	fmt.Println("All complete")
+}
+
+func doWork_WaitGroupie(id int, wg *WaitGroupie) {
+	fmt.Println(id, "Done working")
+	wg.Done()
+}
+
+type WaitGroupie struct {
+	sema *Semaphore
+}
+
+func NewWaitGroupie(size int) *WaitGroupie {
+	return &WaitGroupie{sema: NewSemaphore(1 - size)}
+}
+
+func (wg *WaitGroupie) Wait() {
+	wg.sema.Acquire()
+}
+
+func (wg *WaitGroupie) Done() {
+	wg.sema.Release()
 }
 
 func run_countLetters_waitGroup() {
