@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -37,9 +38,182 @@ func main() {
 	// run_channels()
 	// run_slowReceiver()
 	// run_receiver_after_close()
-	run_receiver_with_done()
+	// run_receiver_with_done()
+	// run_findFactors()
+	// run_RingTest()
+
+	// for val := range ring.Range() {
+	// 	fmt.Println(val)
+	// }
+
 	fmt.Println("\n\nTerminating...")
 	os.Exit(0)
+}
+
+type Channel[M any] struct {
+	capaSema *Semaphore
+	sizeSema *Semaphore
+	mutex    sync.Mutex
+	buffer   *Ring[M]
+}
+
+func NewChannel[M any](capacity int) *Channel[M] {
+	return &Channel[M]{
+		capaSema: NewSemaphore(capacity),
+		sizeSema: NewSemaphore(0),
+		buffer:   NewRing[M](capacity),
+	}
+}
+
+func (c *Channel[M]) Send(message M) {
+	c.capaSema.Acquire()
+
+	c.mutex.Lock()
+	c.buffer.Push(message)
+	c.mutex.Unlock()
+
+	c.sizeSema.Release()
+}
+
+func (c *Channel[M]) Receive() (M, error) {
+	c.capaSema.Release()
+
+	c.sizeSema.Acquire()
+
+	c.mutex.Lock()
+	val, err := c.buffer.Pop()
+	if err != nil {
+		var zero M
+		return zero, err
+	}
+	c.mutex.Unlock()
+
+	return val, nil
+}
+
+func run_RingTest() {
+
+	ring := NewRing[int](5)
+
+	for i := range 25 {
+		ok := ring.Push(i)
+		if !ok {
+			for range 3 {
+				head := ring.head
+				val, err := ring.Pop()
+				if err != nil {
+					fmt.Println(err)
+				}
+				fmt.Printf("at index: %d, val: %d\n", head, val)
+			}
+			ring.Push(i)
+		}
+	}
+}
+
+type Ring[M any] struct {
+	buffer   []M
+	capacity int
+
+	head int
+	tail int
+	size int
+}
+
+func NewRing[M any](capacity int) *Ring[M] {
+	if capacity <= 0 {
+		panic("Ring buffer capacity must be greater than 0")
+	}
+
+	return &Ring[M]{
+		buffer:   make([]M, capacity),
+		capacity: capacity,
+	}
+}
+
+func (ring *Ring[M]) Push(item M) (ok bool) {
+
+	if ring.size < ring.capacity {
+		ring.size++
+	} else {
+		return false
+	}
+
+	ring.buffer[ring.tail] = item
+	ring.tail = (ring.tail + 1) % ring.capacity
+
+	return true
+}
+
+func (ring *Ring[M]) Pop() (M, error) {
+	if ring.size == 0 {
+		var zero M
+		return zero, errors.New("ring buffer is empty")
+	}
+
+	item := ring.buffer[ring.head]
+	// Optional: Zero out the popped element to avoid memory leaks if storing pointers
+	// rb.buffer[rb.head] = 0 (not strictly necessary for int, but good practice for complex types)
+	ring.head = (ring.head + 1) % ring.capacity
+	ring.size--
+	return item, nil
+}
+func (ring *Ring[M]) Range() <-chan M {
+	// rb.mu.Lock() // Uncomment for concurrency if reading state needs to be atomic with modifications
+	// currentSize := rb.size
+	// currentHead := rb.head
+	// elements := make([]int, currentSize)
+	// for i := 0; i < currentSize; i++ {
+	// 	elements[i] = rb.buffer[(currentHead + i) % rb.capacity]
+	// }
+	// rb.mu.Unlock() // Uncomment for concurrency
+
+	// Create a buffered channel with the current size of the buffer.
+	// This allows the goroutine to send all elements and exit quickly.
+	// If size is 0, it becomes an unbuffered channel, which is fine.
+	ch := make(chan M, ring.size) // Using rb.size directly here for simplicity
+
+	go func() {
+		defer close(ch) // Ensure the channel is closed when the goroutine finishes
+
+		// If using the locked approach above, iterate over `elements` slice.
+		// For this simpler version, we iterate based on current head and size.
+		// This is a snapshot-in-time based on when Range() is called.
+		// For true concurrent safety, copy elements under a lock.
+		if ring.size == 0 { // Check IsEmpty which might be locked or not depending on choice
+			return
+		}
+
+		current := ring.head
+		count := ring.size
+		for range count {
+			ch <- ring.buffer[current]
+			current = (current + 1) % ring.capacity
+		}
+	}()
+	return ch
+}
+
+func run_findFactors() {
+	resultCh := make(chan []int)
+	go func() {
+		resultCh <- findFactors(3419110721)
+	}()
+
+	// fmt.Println(findFactors(65536))
+	fmt.Println(findFactors(4033836233))
+	fmt.Println(<-resultCh)
+	// fmt.Println(findFactors(3419110721))
+}
+
+func findFactors(num int) []int {
+	result := []int{}
+	for i := range num {
+		if num%(i+1) == 0 {
+			result = append(result, i+1)
+		}
+	}
+	return result
 }
 
 func run_receiver_with_done() {
