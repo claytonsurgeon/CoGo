@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"math/rand/v2"
 	"net/http"
 	"os"
@@ -48,10 +49,144 @@ func main() {
 
 	// run_TickTok()
 	// run_sendMsgAfter()
-	run_guessPassword()
+	// run_guessPassword()
+	// run_timeout()
+	// run_primesOnly()
+	// run_ProfileLoss()
+	run_countLettersChan()
 
 	fmt.Println("\n\nTerminating...")
 	os.Exit(0)
+}
+
+func run_countLettersChan() {
+	results := make([]<-chan []int, 0)
+	totalFrequencies := make([]int, 26)
+	for i := 1000; i <= 1030; i++ {
+		url := fmt.Sprintf("https://rfc-editor.org/rfc/rfc%d.txt", i)
+		results = append(results, countLettersChan(url))
+	}
+	for _, c := range results {
+		frequencyResult := <-c
+		for i := range all_letters {
+			totalFrequencies[i] += frequencyResult[i]
+		}
+	}
+	for i, c := range all_letters {
+		fmt.Printf("%c:%d\n", c, totalFrequencies[i])
+	}
+}
+
+func countLettersChan(url string) <-chan []int {
+	result := make(chan []int)
+	go func() {
+		defer close(result)
+		frequency := make([]int, len(all_letters))
+		resp, err := http.Get(url)
+		if err != nil {
+			fmt.Println("Failed to get:", url)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != 200 {
+			panic("Server returning error code: " + resp.Status)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		for _, b := range body {
+			c := strings.ToLower(string(b))
+			cIndex := strings.Index(all_letters, c)
+			if cIndex >= 0 {
+				frequency[cIndex] += 1
+			}
+		}
+		fmt.Println("Completed:", url)
+		result <- frequency
+	}()
+	return result
+}
+
+func run_ProfileLoss() {
+	sales := generateAmounts(50)
+	expenses := generateAmounts(54)
+	endOfDayAmount := 0
+	for sales != nil || expenses != nil {
+		select {
+		case sale, moreData := <-sales:
+			if moreData {
+				fmt.Println("Sale of:", sale)
+				endOfDayAmount += sale
+			} else {
+				sales = nil
+			}
+		case expense, moreData := <-expenses:
+			if moreData {
+				fmt.Println("Expense of:", expense)
+				endOfDayAmount -= expense
+			} else {
+				expenses = nil
+			}
+		}
+	}
+	fmt.Println("End of day profit and loss:", endOfDayAmount)
+}
+
+func generateAmounts(n int) <-chan int {
+	amounts := make(chan int)
+	go func() {
+		defer close(amounts)
+		for range n {
+			amounts <- rand.IntN(100) + 1
+			time.Sleep(100 * time.Millisecond)
+		}
+	}()
+	return amounts
+}
+
+func run_primesOnly() {
+	numChan := make(chan int)
+	primeChan := primesOnly(numChan)
+	for i := 0; i < 100; {
+		select {
+		case numChan <- rand.IntN(1000000000) + 1:
+		case p := <-primeChan:
+			fmt.Println("Found prime:", p)
+			i++
+		}
+	}
+}
+
+func primesOnly(numChan <-chan int) <-chan int {
+	results := make(chan int)
+	go func() {
+		for c := range numChan {
+			isPrime := c != 1
+			for i := 2; i <= int(math.Sqrt(float64(c))); i++ {
+				if c%i == 0 {
+					isPrime = false
+					break
+				}
+			}
+			if isPrime {
+				time.Sleep(100 * time.Millisecond)
+				results <- c
+
+			}
+		}
+	}()
+	return results
+}
+
+func run_timeout() {
+	t := 1
+	messages := sendMsgAfter(3 * time.Second)
+	timeoutDuration := time.Duration(t) * time.Second
+
+	fmt.Printf("Waiting for message for %d seconds...\n", t)
+	select {
+	case msg := <-messages:
+		fmt.Println("Message received:", msg)
+	case tNow := <-time.After(timeoutDuration):
+		fmt.Println("Timed out. Waited until:", tNow.Format("2006-01-02, 15:04:05"))
+	}
 }
 
 func run_guessPassword() {
