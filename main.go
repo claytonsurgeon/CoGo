@@ -46,8 +46,117 @@ func main() {
 	// 	fmt.Println(val)
 	// }
 
+	// run_TickTok()
+	// run_sendMsgAfter()
+	run_guessPassword()
+
 	fmt.Println("\n\nTerminating...")
 	os.Exit(0)
+}
+
+func run_guessPassword() {
+	finished := make(chan int)
+	passwordFound := make(chan string)
+
+	for i := 1; i < 387_420_488; i += 10_000_000 {
+		go guessPassword(i, i+10_000_000, finished, passwordFound)
+	}
+
+	fmt.Println("password found", <-passwordFound)
+	close(passwordFound)
+	time.Sleep(5 * time.Second)
+}
+
+func guessPassword(from, upto int, stop chan int, result chan string) {
+	for guessN := from; guessN < upto; guessN += 1 {
+		select {
+		case <-stop:
+			// case val, ok := <-stop:
+			// fmt.Println("val", val, " ok:", ok)
+			fmt.Printf("Stopped at %d [%d, %d]\n", guessN, from, upto)
+			return
+
+		default:
+			if b27Guess := toBase27(guessN); b27Guess == passwordToGuess {
+				fmt.Printf("Found at %d [%d, %d]!!!\n", guessN, from, upto)
+				result <- b27Guess
+				close(stop)
+				return
+			}
+		}
+	}
+
+	fmt.Printf("Not found between [%d, %d]\n", from, upto)
+}
+
+const (
+	passwordToGuess = "secret"
+	alphabet        = " abcdefghijklmnopqrstuvwxyz"
+)
+
+func toBase27(n int) string {
+	result := ""
+	for n > 0 {
+		result = string(alphabet[n%27]) + result
+		n /= 27
+	}
+
+	return result
+}
+
+func run_sendMsgAfter() {
+	msgChan := sendMsgAfter(3 * time.Second)
+	for {
+		select {
+		case msg := <-msgChan:
+			fmt.Println("Message received:", msg)
+			return
+		default:
+			fmt.Println("No messages waiting")
+			time.Sleep(1 * time.Second)
+		}
+	}
+}
+
+func sendMsgAfter(seconds time.Duration) <-chan string {
+	msgChan := make(chan string)
+	go func() {
+		time.Sleep(seconds)
+		msgChan <- "Hola"
+	}()
+
+	return msgChan
+}
+
+func run_TickTok() {
+	msgChanA := writeEvery("Tick", 3*time.Second)
+	msgChanB := writeEvery("Tock", 8*time.Second)
+
+	for {
+		select {
+		case msgA := <-msgChanA:
+			fmt.Println(msgA)
+
+		case msgB := <-msgChanB:
+			fmt.Println(msgB)
+
+		default:
+			fmt.Println("waiting...")
+			time.Sleep(1 * time.Second)
+		}
+	}
+}
+
+func writeEvery(msg string, secs time.Duration) <-chan string {
+	msgChan := make(chan string)
+	go func() {
+		for {
+			time.Sleep(secs)
+			msgChan <- msg
+		}
+	}()
+
+	return msgChan
 }
 
 type Channel[M any] struct {
